@@ -99,11 +99,6 @@ class VaREngine:
         return self.investment * var_pct_loss, var_pct_loss
 
     def monte_carlo_var(self, simulations, confidence_level):
-        """
-        Simplified Monte Carlo VaR.
-        Instead of simulating every stock, we simulate the Portfolio's total return directly.
-        This is perfect for a junior project: easy to understand, computationally fast.
-        """
         # 1. Get Portfolio stats
         mu, sigma = self.calculate_portfolio_performance()
         
@@ -172,4 +167,5 @@ if __name__ == "__main__":
         plt.show()
         
     except Exception as e:
+
         print(f"An error occurred during execution: {e}")
