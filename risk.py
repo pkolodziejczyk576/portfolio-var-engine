@@ -33,7 +33,7 @@ class VaREngine:
         if len(self.tickers) > 1:
             self.data = self.data[self.tickers]
 
-        # 1. Log Returns for Parametric/Monte Carlo (Normal Assumption)
+        # 1. Log Returns for Parametric/Monte Carlo 
 
         self.log_returns = np.log(self.data / self.data.shift(1)).dropna()
         
@@ -41,13 +41,12 @@ class VaREngine:
 
         self.simple_returns = self.data.pct_change().dropna()
         
-        # Mean and Covariance of LOG returns (for parametric modeling)
+        # Mean and Covariance of log returns (for parametric modeling)
         self.mean_log_returns = self.log_returns.mean()
         self.cov_matrix = self.log_returns.cov()
 
     def calculate_portfolio_performance(self):
         # This calculates expected Log-Return performance based on linear weights
-        # Note: This is an approximation for portfolio log-returns
         port_return = np.sum(self.mean_log_returns * self.weights)
         port_volatility = np.sqrt(np.dot(self.weights.T, np.dot(self.cov_matrix, self.weights)))
         return port_return, port_volatility
@@ -61,8 +60,6 @@ class VaREngine:
         portfolio_simple_returns = self.simple_returns.dot(self.weights)
         
         # Calculate actual N-day cumulative returns using a rolling window
-        # Geometric compounding: (1+r1)*(1+r2)*... - 1
-        # We use apply with np.prod for exact compounding
         rolling_cumulative_returns = (
             (1 + portfolio_simple_returns)
             .rolling(window=self.days)
@@ -99,10 +96,10 @@ class VaREngine:
         return self.investment * var_pct_loss, var_pct_loss
 
     def monte_carlo_var(self, simulations, confidence_level):
-        # 1. Get Portfolio stats
+        #Get Portfolio stats
         mu, sigma = self.calculate_portfolio_performance()
         
-        # 2. Generate random returns for the portfolio
+        #Generate random returns for the portfolio
 
         z_scores = np.random.normal(0, 1, simulations)
         
@@ -169,3 +166,4 @@ if __name__ == "__main__":
     except Exception as e:
 
         print(f"An error occurred during execution: {e}")
+
