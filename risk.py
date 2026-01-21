@@ -15,6 +15,7 @@ class VaREngine:
         # Download historical data
         df = yf.download(self.tickers, start=start_date, end=end_date, progress=False, auto_adjust=True)
         
+        #Make sure the data is in the right format
         if isinstance(df.columns, pd.MultiIndex):
             try:
                 self.data = df['Close']
@@ -29,29 +30,31 @@ class VaREngine:
 
         self.data = self.data.dropna()
 
-
+        #make sure the data is ordered correctly
+        self.data = self.data.sort_index()
         if len(self.tickers) > 1:
             self.data = self.data[self.tickers]
 
-        # 1. Log Returns for Parametric/Monte Carlo 
+        # Calculate Log Returns
 
         self.log_returns = np.log(self.data / self.data.shift(1)).dropna()
-        
-        # 2. Simple Returns for Historical Simulation 
+                
+        # Calculate Simple Returns
 
         self.simple_returns = self.data.pct_change().dropna()
         
-        # Mean and Covariance of log returns (for parametric modeling)
+        # Mean and Covariance of LOG returns (for parametric modeling)
         self.mean_log_returns = self.log_returns.mean()
         self.cov_matrix = self.log_returns.cov()
 
     def calculate_portfolio_performance(self):
         # This calculates expected Log-Return performance based on linear weights
+        # Note: This is an approximation for portfolio log-returns
         port_return = np.sum(self.mean_log_returns * self.weights)
         port_volatility = np.sqrt(np.dot(self.weights.T, np.dot(self.cov_matrix, self.weights)))
         return port_return, port_volatility
 
-    def historical_var(self, confidence_level=0.95):
+    def historical_var(self, confidence_level):
         """
         Calculates VaR using the Historical Method with exact simple returns.
         We reconstruct exactly what the portfolio N-day return would have been.
@@ -60,6 +63,8 @@ class VaREngine:
         portfolio_simple_returns = self.simple_returns.dot(self.weights)
         
         # Calculate actual N-day cumulative returns using a rolling window
+        # Geometric compounding: (1+r1)*(1+r2)*... - 1
+        # We use apply with np.prod for exact compounding
         rolling_cumulative_returns = (
             (1 + portfolio_simple_returns)
             .rolling(window=self.days)
@@ -72,9 +77,9 @@ class VaREngine:
         
         var_pct_loss = -var_horizon
         
-        return self.investment * var_pct_loss, var_pct_loss
+        return self.investment * var_pct_loss, var_pct_loss, rolling_cumulative_returns
 
-    def parametric_var(self, confidence_level=0.95):
+    def parametric_var(self, confidence_level):
         """
         Parametric (Variance-Covariance) VaR.
         Assumes Log-Normal distribution of prices (Normal distribution of returns).
@@ -93,26 +98,37 @@ class VaREngine:
         # Convert to Simple Percentage Loss
         var_pct_loss = 1 - np.exp(var_log)
         
-        return self.investment * var_pct_loss, var_pct_loss
+        return self.investment * var_pct_loss, var_pct_loss, sigma  
 
     def monte_carlo_var(self, simulations, confidence_level):
-        #Get Portfolio stats
-        mu, sigma = self.calculate_portfolio_performance()
-        
-        #Generate random returns for the portfolio
+        """
+        Monte Carlo VaR using Historical Bootstrapping.
+        We resample actual historical portfolio returns to simulate future paths.
+        This avoids Normal distribution assumptions (capture fat tails, skewness),
+        """
+        # Calculate historical daily log returns for the portfolio
+        # We assume constant weights for the history
+        portfolio_log_returns = self.log_returns.dot(self.weights)
 
-        z_scores = np.random.normal(0, 1, simulations)
-        
-        # Calculate return for the target_days horizon
-        simulated_returns = sigma * np.sqrt(self.days) * z_scores
-        
+        # Resample returns with replacement
+        # Generate a matrix of random indices: (simulations, days)
+        # We sample from the actual observed returns
+        simulated_returns_matrix = np.random.choice(portfolio_log_returns, size=(simulations, self.days), replace=True)
+
+        # Calculate cumulative return for each simulation path (horizon)
+        # Sum of log returns = Cumulative log return
+        simulated_horizon_log_returns = np.sum(simulated_returns_matrix, axis=1)
+
+        # Convert Log Returns -> Simple Returns
+        simulated_horizon_simple_returns = np.exp(simulated_horizon_log_returns) - 1
+
         # Determine VaR
-        sorted_sims = np.sort(simulated_returns)
+        var_pct_loss = -np.percentile(simulated_horizon_simple_returns, (1 - confidence_level) * 100)
         
-        cutoff_index = int((1 - confidence_level) * simulations)
-        var_pct_loss = -sorted_sims[cutoff_index]
-        
-        return self.investment * var_pct_loss, var_pct_loss, simulated_returns
+        # Calculate dollar value
+        var_dollar_loss = self.investment * var_pct_loss
+
+        return var_dollar_loss, var_pct_loss, simulated_horizon_simple_returns
 
 # --- EXECUTION  ---
 
@@ -132,9 +148,8 @@ if __name__ == "__main__":
     try:
         engine = VaREngine(tickers, weights, investment_value, start_date, end_date, days=target_days)
 
-        hist_var, hist_pct = engine.historical_var(confidence)
-        param_var, param_pct = engine.parametric_var(confidence)
-        
+        hist_var, hist_pct, hist_data = engine.historical_var(confidence_level=confidence)
+        param_var, param_pct, param_sigma = engine.parametric_var(confidence_level=confidence)
         mc_var, mc_pct, mc_sims = engine.monte_carlo_var(simulations=simulations, confidence_level=confidence)
 
         # Output
@@ -147,23 +162,48 @@ if __name__ == "__main__":
         print(f"   (Calculated using actual {target_days}-day rolling returns)")
         
         print(f"2. Parametric VaR:   ${param_var:,.2f} ({param_pct*100:.2f}%)")
+        print(f"Portfolio Volatility: {param_sigma * np.sqrt(target_days)}")
         print(f"   (Calculated using Normal Distribution assumption)")
         
         print(f"3. Monte Carlo VaR:  ${mc_var:,.2f} ({mc_pct*100:.2f}%)")
-        print(f"   (Calculated using {simulations} simulations)") 
+        print(f"   (Historical Bootstrapping with {simulations} simulations)") 
 
-        # Plot
-        plt.figure(figsize=(10, 6))
-        plt.hist(mc_sims * 100, bins=50, alpha=0.6, color='skyblue', edgecolor='black', label='Simulated Returns')
-        plt.axvline(-mc_pct * 100, color='red', linestyle='--', linewidth=2, label=f'VaR Limit (-{mc_pct*100:.2f}%)')
-        plt.title(f"Monte Carlo: {target_days}-Day Potential Return Distribution")
-        plt.xlabel("Return (%)")
-        plt.ylabel("Frequency")
-        plt.legend()
-        plt.grid(True, alpha=0.3)
+        # 3 Separate Subplots
+        fig, axes = plt.subplots(3, 1, figsize=(8, 8))
+        
+        # Historical Plots
+        axes[0].hist(hist_data * 100, bins=50, alpha=0.6, color='purple', edgecolor='black', label='Historical Returns')
+        axes[0].axvline(-hist_pct * 100, color='red', linestyle='--', linewidth=2, label=f'VaR (-{hist_pct*100:.2f}%)')
+        axes[0].set_title(f"Historical Simulation: {target_days}-Day Actual Returns")
+        axes[0].set_ylabel("Frequency")
+        axes[0].legend()
+        axes[0].grid(True, alpha=0.3)
+
+        # Parametric Plots
+        # Generate Normal Distribution curve
+        mu_p, sigma_p = engine.calculate_portfolio_performance()
+        sigma_horizon = sigma_p * np.sqrt(target_days)
+        # We plot a range of +/- 4 sigmas
+        x_axis = np.linspace(-4*sigma_horizon, 4*sigma_horizon, 1000)
+        # Use a secondary y-axis for the PDF to make it visible
+        axes[1].plot(x_axis * 100, stats.norm.pdf(x_axis, 0, sigma_horizon), color='orange', linewidth=3, label='Normal Distribution')
+        axes[1].axvline(-param_pct * 100, color='red', linestyle='--', linewidth=2, label=f'VaR (-{param_pct*100:.2f}%)')
+        axes[1].set_title(f"Parametric Method: Normal Distribution Assumption")
+        axes[1].set_ylabel("Probability Density")
+        axes[1].legend()
+        axes[1].grid(True, alpha=0.3)
+
+        # Monte Carlo Plots
+        axes[2].hist(mc_sims * 100, bins=50, alpha=0.6, color='skyblue', edgecolor='black', label='Simulated Returns')
+        axes[2].axvline(-mc_pct * 100, color='red', linestyle='--', linewidth=2, label=f'VaR (-{mc_pct*100:.2f}%)')
+        axes[2].set_title(f"Monte Carlo (Bootstrap): {simulations} Simulated Paths")
+        axes[2].set_xlabel("Return (%)")
+        axes[2].set_ylabel("Frequency")
+        axes[2].legend()
+        axes[2].grid(True, alpha=0.3)
+
+        plt.tight_layout()
         plt.show()
         
     except Exception as e:
-
         print(f"An error occurred during execution: {e}")
-
