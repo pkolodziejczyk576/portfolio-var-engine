@@ -151,7 +151,7 @@ if __name__ == "__main__":
         hist_var, hist_pct, hist_data = engine.historical_var(confidence_level=confidence)
         param_var, param_pct, param_sigma = engine.parametric_var(confidence_level=confidence)
         mc_var, mc_pct, mc_sims = engine.monte_carlo_var(simulations=simulations, confidence_level=confidence)
-
+        kurtosis = hist_data.kurtosis()
         # Output
         print(f"\n--- Value at Risk (VaR) Report ---")
         print(f"Time Horizon: {target_days} Days")
@@ -162,9 +162,10 @@ if __name__ == "__main__":
         print(f"   (Calculated using actual {target_days}-day rolling returns)")
         
         print(f"2. Parametric VaR:   ${param_var:,.2f} ({param_pct*100:.2f}%)")
-        print(f"Portfolio Volatility: {param_sigma * np.sqrt(target_days)}")
+        print(f"   Portfolio Volatility: {param_sigma * np.sqrt(target_days)}")
         print(f"   (Calculated using Normal Distribution assumption)")
-        
+        print(f"   Kurtosis ({target_days}-day rolling): {kurtosis}")
+
         print(f"3. Monte Carlo VaR:  ${mc_var:,.2f} ({mc_pct*100:.2f}%)")
         print(f"   (Historical Bootstrapping with {simulations} simulations)") 
 
