@@ -1,16 +1,58 @@
-# Portfolio VaR Engine
+# Value at Risk (VaR) Engine – Python
 
-A risk management tool focused on Market Risk quantification. It calculates **Value at Risk (VaR)** for investment portfolios using three statistical methodologies.
+Python implementation of a **Value at Risk (VaR) engine** comparing three approaches:
 
-## Key Features
-- **Historical Simulation:** Reconstructs exact portfolio returns based on past market data.
-- **Parametric VaR:** Uses Variance-Covariance method assuming normal distribution.
-- **Monte Carlo Simulation:** Runs 10,000 simulations to project potential future losses.
-- **Visualization:** Generates distribution plots to identify tail risks using `matplotlib`.
+- **Historical Simulation**
+- **Parametric (Variance–Covariance)**
+- **Monte Carlo (Historical Bootstrapping)**
 
-## Technologies
-- **Python 3.x**
-- **Libraries:** `pandas`, `numpy`, `scipy`, `yfinance`, `matplotlib`
+The project focuses on **practical differences between models**
+---
 
-## How it works
-The script fetches historical data for selected tickers (e.g., SPY, QQQ) via Yahoo Finance API and computes the potential loss for a given confidence level (e.g., 95%) and time horizon.
+## Overview
+
+The engine downloads market data, constructs a multi-asset portfolio, and estimates VaR over an arbitrary time horizon.  
+Beyond computing VaR, the project highlights **model assumptions, tail behavior, and empirical limitations**.
+
+---
+
+## Methods
+
+### Historical VaR
+- Uses actual historical returns
+- Reconstructs exact **N-day portfolio returns** via geometric compounding
+- No distributional assumptions
+
+**Pros:** Model-free, captures fat tails  
+**Cons:** Backward-looking
+
+---
+
+### Parametric VaR
+- Assumes **normally distributed log-returns**
+- Portfolio volatility computed from the covariance matrix
+- Time scaling via √T, mean return set to zero
+
+**Pros:** Fast and tractable  
+**Cons:** Underestimates tail risk under high kurtosis
+
+---
+
+### Monte Carlo VaR (Bootstrapping)
+- Resamples historical portfolio **log-returns with replacement**
+- Simulates future return paths without assuming normality
+
+**Pros:** Preserves empirical skewness and fat tails  
+**Cons:** Assumes i.i.d. returns
+
+---
+
+## Key Assumptions
+
+- Constant portfolio weights  
+- No transaction costs or liquidity effects  
+- Fixed confidence level and time horizon  
+- Educational, non-production risk model  
+
+---
+You can adjust assets, weights, confidence level, time horizon, and number of Monte Carlo simulations directly in the script.
